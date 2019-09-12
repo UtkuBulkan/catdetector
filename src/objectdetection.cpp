@@ -196,7 +196,7 @@ void ObjectDetector::process_frame(cv::Mat &frame, int framecount, std::string h
 	freq = cv::getTickFrequency() / 1000;
 	t = net.getPerfProfile(layersTimes) / freq;
 	label = cv::format("London South Bank University - Utku Bulkan - Frame processing time: %.2f ms", t);
-	cv::putText(frame, label, cv::Point(0, 15), cv::FONT_HERSHEY_SIMPLEX, 0.9, cv::Scalar(0, 0, 0));
+	cv::putText(frame, label, cv::Point(0, 20), cv::FONT_HERSHEY_SIMPLEX, 0.9, cv::Scalar(0, 0, 0));
 
 	syslog(LOG_DEBUG, "ObjectDetector::process_frame End");
 }
@@ -255,8 +255,6 @@ void ObjectDetector::loop() {
 		throw "Error opening file.\n";
 	}
 
-	capture >> frame;
-
 	int ex = static_cast<int>(capture.get(cv::CAP_PROP_FOURCC));	// Get Codec Type- Int form
 	cv::Size S = cv::Size((int) capture.get(cv::CAP_PROP_FRAME_WIDTH), (int) capture.get(cv::CAP_PROP_FRAME_HEIGHT));
 
@@ -271,13 +269,16 @@ void ObjectDetector::loop() {
 		syslog(LOG_DEBUG, "Frame count : %d", framecount);
 		syslog(LOG_DEBUG, "Frame resolution : %d x %d", frame.rows, frame.cols);
 
+		capture >> frame;
+		framecount++;
+
 		if (framecount % 24 == 0)
 		{
 			process_frame(frame, framecount, hash_video);
 			cv::imshow("Camera1", frame);
 
 			/* Outputting captured frames to a video file */
-			/* outputVideo << frame; */
+			outputVideo << frame;
 
 			/* Outputting captured frames to json */
 			/*
@@ -292,7 +293,5 @@ void ObjectDetector::loop() {
 			/* video_analyser_kafka_producer(j.dump().c_str(), "TutorialTopic"); */
 		}
 		if(cv::waitKey(30) >= 0) break;
-		capture >> frame;
-		framecount++;
 	}
 }
