@@ -33,16 +33,14 @@
 #include <string>
 #include <vector>
 #include <sstream>
-#include "tensorflow/c/c_api.h"
-#include <objectdetection.h>
 #include <syslog.h>
 
-#include <openssl/md5.h>
-#include <fcntl.h>
-#include <sys/mman.h>
+#include "tensorflow/c/c_api.h"
+#include "objectdetection.h"
+#include "md5_helper.h"
 
 #define CATDETECTOR_ANALYSE_EVERY_24_FRAMES
-//#define CATDETECTOR_ENABLE_OUTPUT_TO_VIDEO_FILE
+#define CATDETECTOR_ENABLE_OUTPUT_TO_VIDEO_FILE
 #define CATDETECTOR_ENABLE_CAPTURED_FRAMES_TO_JSON
 
 ObjectDetector::ObjectDetector() : confidence_threshold(0.9),
@@ -203,47 +201,6 @@ void ObjectDetector::process_frame(cv::Mat &frame, int framecount, std::string h
 	cv::putText(frame, label, cv::Point(0, 20), cv::FONT_HERSHEY_SIMPLEX, 0.9, cv::Scalar(0, 0, 0));
 
 	syslog(LOG_NOTICE, "ObjectDetector::process_frame End");
-}
-
-// Get the size of the file by its file descriptor
-unsigned long get_size_by_fd(int fd)
-{
-	struct stat statbuf;
-	if(fstat(fd, &statbuf) < 0) exit(-1);
-	return statbuf.st_size;
-}
-
-std::string md5_hash(std::string filename)
-{
-	int file_descript;
-	unsigned long file_size;
-	char* file_buffer;
-	unsigned char result[MD5_DIGEST_LENGTH];
-
-	printf("using file:\t%s\n", filename.c_str());
-
-	file_descript = open(filename.c_str(), O_RDONLY);
-	if(file_descript < 0) return 0;
-
-	file_size = get_size_by_fd(file_descript);
-	printf("file size:\t%lu\n", file_size);
-
-	file_buffer = (char *) mmap(0, file_size, PROT_READ, MAP_SHARED, file_descript, 0);
-	MD5((unsigned char*) file_buffer, file_size, result);
-	munmap(file_buffer, file_size);
-
-	char md5string[2 * MD5_DIGEST_LENGTH + 1];
-
-	memset(md5string, 0, 2 * MD5_DIGEST_LENGTH + 1);
-
-	for(int i = 0; i < MD5_DIGEST_LENGTH; ++i)
-		sprintf(&md5string[i*2], "%02x", (unsigned int)result[i]);
-
-	std::string result_str (reinterpret_cast<char*>(md5string));
-
-	syslog(LOG_NOTICE, "hash: %s", result_str.c_str());
-
-	return result_str;
 }
 
 void ObjectDetector::loop() {
