@@ -41,6 +41,10 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 
+#define CATDETECTOR_ANALYSE_EVERY_24_FRAMES
+//#define CATDETECTOR_ENABLE_OUTPUT_TO_VIDEO_FILE
+#define CATDETECTOR_ENABLE_CAPTURED_FRAMES_TO_JSON
+
 ObjectDetector::ObjectDetector() : confidence_threshold(0.9),
 mask_threshold(0.3),
 class_definition_file("../data/mscoco_labels.names"),
@@ -48,7 +52,7 @@ colors_file("../data/colors.txt"),
 text_graph_file("../data/mask_rcnn_inception_v2_coco_2018_01_28.pbtxt"),
 model_weights_file("../data/frozen_inference_graph.pb")
 {
-	syslog (LOG_DEBUG, "ObjectDetector Constructor Begin");
+	syslog (LOG_NOTICE, "ObjectDetector Constructor Begin");
 
 	std::ifstream classes_file_stream(class_definition_file.c_str());
 	std::ifstream colors_file_stream(colors_file.c_str());
@@ -56,7 +60,7 @@ model_weights_file("../data/frozen_inference_graph.pb")
 
 	while (getline(classes_file_stream, line)) {
 		classes.push_back(line);
-		syslog (LOG_DEBUG, "Class Labels : %s", line.c_str());
+		syslog (LOG_NOTICE, "Class Labels : %s", line.c_str());
 	}
 
 	while (getline(colors_file_stream, line)) {
@@ -64,17 +68,17 @@ model_weights_file("../data/frozen_inference_graph.pb")
 		double red, green, blue;
 		ss >> red >> green >> blue;
 		colors.push_back(cv::Scalar(red, green, blue, 255.0));
-		syslog (LOG_DEBUG, "Colors.txt Colors : %f, %f, %f", red, green, blue);
+		syslog (LOG_NOTICE, "Colors.txt Colors : %f, %f, %f", red, green, blue);
 	}
 
 	// Load the network for the model
-	syslog (LOG_DEBUG, "ObjectDetector Loading Network");
+	syslog (LOG_NOTICE, "ObjectDetector Loading Network");
 	net = cv::dnn::readNetFromTensorflow(model_weights_file, text_graph_file);
 	net.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
 	net.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
-	syslog (LOG_DEBUG, "ObjectDetector Network Loaded");
+	syslog (LOG_NOTICE, "ObjectDetector Network Loaded");
 
-	syslog (LOG_DEBUG, "ObjectDetector Constructor End");
+	syslog (LOG_NOTICE, "ObjectDetector Constructor End");
 }
 
 ObjectDetector::~ObjectDetector() {
@@ -82,7 +86,7 @@ ObjectDetector::~ObjectDetector() {
 
 void ObjectDetector::draw_box(cv::Mat& frame, int classId, float confidence, cv::Rect box, cv::Mat& objectMask)
 {
-	syslog(LOG_DEBUG, "ObjectDetector::draw_box Begin");
+	syslog(LOG_NOTICE, "ObjectDetector::draw_box Begin");
 
 	std::string label = cv::format("%2.2f", confidence);
 	std::vector<cv::Mat> contours;
@@ -113,12 +117,12 @@ void ObjectDetector::draw_box(cv::Mat& frame, int classId, float confidence, cv:
 	cv::drawContours(coloredRoi, contours, -1, color, 5, cv::LINE_8, hierarchy, 100);
 	coloredRoi.copyTo(frame(box), mask);
 
-	syslog(LOG_DEBUG, "ObjectDetector::draw_box End");
+	syslog(LOG_NOTICE, "ObjectDetector::draw_box End");
 }
 
 void ObjectDetector::generate_json(cv::Mat &frame, const int &classId, const int &framecount, std::string frame_md5, std::string video_md5)
 {
-	syslog(LOG_DEBUG, "ObjectDetector::generate_json Begin");
+	syslog(LOG_NOTICE, "ObjectDetector::generate_json Begin");
 
 	json local_j;
 
@@ -134,20 +138,20 @@ void ObjectDetector::generate_json(cv::Mat &frame, const int &classId, const int
 	local_j["image"] = buffer;
 	j.push_back(local_j);
 
-	syslog(LOG_DEBUG, "ObjectDetector::generate_json End");
+	syslog(LOG_NOTICE, "ObjectDetector::generate_json End");
 }
 
 void ObjectDetector::post_process(cv::Mat& frame, const std::vector<cv::Mat>& outs, int framecount, std::string hash_video)
 {
-	syslog(LOG_DEBUG, "ObjectDetector::post_process Begin");
+	syslog(LOG_NOTICE, "ObjectDetector::post_process Begin");
 
 	cv::Mat output_detections = outs[0], outMasks = outs[1];
 	const int num_detections = output_detections.size[2];
 	const int num_classes = outMasks.size[1];
 
 	output_detections = output_detections.reshape(1, output_detections.total() / 7);
-	syslog(LOG_DEBUG, "Object Detector postprocess num_detections : %d", num_detections);
-	syslog(LOG_DEBUG, "Object Detector postprocess num_classes : %d", num_classes);
+	syslog(LOG_NOTICE, "Object Detector postprocess num_detections : %d", num_detections);
+	syslog(LOG_NOTICE, "Object Detector postprocess num_classes : %d", num_classes);
 	for (int i = 0; i < num_detections; ++i)
 	{
 		float score = output_detections.at<float>(i, 2);
@@ -171,7 +175,7 @@ void ObjectDetector::post_process(cv::Mat& frame, const std::vector<cv::Mat>& ou
 		}
 	}
 
-	syslog(LOG_DEBUG, "ObjectDetector::post_process End");
+	syslog(LOG_NOTICE, "ObjectDetector::post_process End");
 }
 
 void ObjectDetector::process_frame(cv::Mat &frame, int framecount, std::string hash_video) {
@@ -182,7 +186,7 @@ void ObjectDetector::process_frame(cv::Mat &frame, int framecount, std::string h
 	cv::Mat blob;
 	double freq, t;
 
-	syslog(LOG_DEBUG, "ObjectDetector::process_frame Begin");
+	syslog(LOG_NOTICE, "ObjectDetector::process_frame Begin");
 
 	//cv::dnn::blobFromImage(frame, blob);
 	cv::dnn::blobFromImage(frame, blob, 1.0, cv::Size(frame.cols, frame.rows), cv::Scalar(), true, false);
@@ -190,7 +194,7 @@ void ObjectDetector::process_frame(cv::Mat &frame, int framecount, std::string h
 	outNames[0] = "detection_out_final";
 	outNames[1] = "detection_masks";
 	net.forward(outs, outNames);
-	syslog(LOG_DEBUG, "Number of outs : %d", (int) outs.size());
+	syslog(LOG_NOTICE, "Number of outs : %d", (int) outs.size());
 
 	post_process(frame, outs, framecount, hash_video);
 	freq = cv::getTickFrequency() / 1000;
@@ -198,7 +202,7 @@ void ObjectDetector::process_frame(cv::Mat &frame, int framecount, std::string h
 	label = cv::format("London South Bank University - Utku Bulkan - Frame processing time: %.2f ms", t);
 	cv::putText(frame, label, cv::Point(0, 20), cv::FONT_HERSHEY_SIMPLEX, 0.9, cv::Scalar(0, 0, 0));
 
-	syslog(LOG_DEBUG, "ObjectDetector::process_frame End");
+	syslog(LOG_NOTICE, "ObjectDetector::process_frame End");
 }
 
 // Get the size of the file by its file descriptor
@@ -255,10 +259,19 @@ void ObjectDetector::loop() {
 		throw "Error opening file.\n";
 	}
 
+	capture >> frame;
+
 	int ex = static_cast<int>(capture.get(cv::CAP_PROP_FOURCC));	// Get Codec Type- Int form
+	int codec = cv::VideoWriter::fourcc('M', 'P', 'G', '2');
 	cv::Size S = cv::Size((int) capture.get(cv::CAP_PROP_FRAME_WIDTH), (int) capture.get(cv::CAP_PROP_FRAME_HEIGHT));
 
-	outputVideo.open("./output.mp4", ex, capture.get(cv::CAP_PROP_FPS), S, true);
+	syslog(LOG_NOTICE, "Input file fourcc: %d, %d", codec, ex);
+	syslog(LOG_NOTICE, "Input file width: %d", S.width);
+	syslog(LOG_NOTICE, "Input file height: %d", S.height);
+
+	outputVideo.open("./output.mp4", cv::CAP_FFMPEG, codec, capture.get(cv::CAP_PROP_FPS), S, true);
+	outputVideo << frame;
+
 	cv::namedWindow("Camera1", cv::WINDOW_NORMAL);
 	cv::resizeWindow("Camera1", 640, 480);
 
@@ -266,32 +279,34 @@ void ObjectDetector::loop() {
 	std::string hash_video = md5_hash(filename);
 
 	while(1) {
-		syslog(LOG_DEBUG, "Frame count : %d", framecount);
-		syslog(LOG_DEBUG, "Frame resolution : %d x %d", frame.rows, frame.cols);
+		syslog(LOG_NOTICE, "Frame count : %d", framecount);
+		syslog(LOG_NOTICE, "Frame resolution : %d x %d", frame.rows, frame.cols);
 
 		capture >> frame;
 		framecount++;
-
+#ifdef CATDETECTOR_ANALYSE_EVERY_24_FRAMES
 		if (framecount % 24 == 0)
+#endif
 		{
 			process_frame(frame, framecount, hash_video);
-			cv::imshow("Camera1", frame);
-
+#ifdef CATDETECTOR_ENABLE_OUTPUT_TO_VIDEO_FILE
 			/* Outputting captured frames to a video file */
 			outputVideo << frame;
+#endif
+			cv::imshow("Camera1", frame);
 
+#ifdef CATDETECTOR_ENABLE_CAPTURED_FRAMES_TO_JSON
 			/* Outputting captured frames to json */
-			/*
 			std::ofstream myfile;
 			std::string videodata_filename(hash_video + ".json");
 			myfile.open (videodata_filename);
 			myfile << j << std::endl;
 			myfile.close();
-			 */
-
+#endif
 			/* Sending the data as a Kafka producer */
 			/* video_analyser_kafka_producer(j.dump().c_str(), "TutorialTopic"); */
 		}
 		if(cv::waitKey(30) >= 0) break;
 	}
+	outputVideo.release();
 }
