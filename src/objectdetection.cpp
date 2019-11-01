@@ -165,6 +165,9 @@ void ObjectDetector::post_process(cv::Mat& frame, const std::vector<cv::Mat>& ou
 			top = cv::max(0, cv::min(top, frame.rows - 1));
 			right = cv::max(0, cv::min(right, frame.cols - 1));
 			bottom = cv::max(0, cv::min(bottom, frame.rows - 1));
+
+			syslog(LOG_NOTICE, "%d - %d,%d,%d,%d, framewidth : %d, frameheight : %d", i, left, top, right, bottom, frame.cols, frame.rows);
+
 			cv::Rect box = cv::Rect(left, top, right - left + 1, bottom - top + 1);
 			cv::Mat objectMask(outMasks.size[2], outMasks.size[3],CV_32F, outMasks.ptr<float>(i,classId));
 			draw_box(frame, classId, score, box, objectMask);
