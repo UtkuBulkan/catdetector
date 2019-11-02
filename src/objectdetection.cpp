@@ -39,6 +39,8 @@
 #include "objectdetection.h"
 #include "md5_helper.h"
 
+#include <opencv2/core/utils/filesystem.hpp>
+
 #define CATDETECTOR_ANALYSE_EVERY_24_FRAMES
 #define CATDETECTOR_ENABLE_OUTPUT_TO_VIDEO_FILE
 #define CATDETECTOR_ENABLE_CAPTURED_FRAMES_TO_JSON
@@ -126,14 +128,22 @@ void ObjectDetector::generate_json(cv::Mat &frame, const int &classId, const int
 
 	local_j["class"] = classes[classId].c_str();
 	local_j["frame"] = framecount;
-	local_j["hash-frame"] = frame_md5;
 	local_j["hash-video"] = video_md5;
 
 	std::vector<uchar> buffer;
 #define MB 1024 * 1024
-	buffer.resize(200*MB);
-	cv::imencode(".png", frame, buffer);
-	local_j["image"] = buffer;
+	std::string frame_path;
+	frame_path.append("./");
+	frame_path.append(video_md5);
+	frame_path.append("/");
+	frame_path.append(std::to_string(framecount/24));
+	frame_path.append("-");
+	frame_path.append(classes[classId]);
+	frame_path.append(".jpg");
+
+	imwrite(frame_path, frame);
+	local_j["hash-frame"] = md5_hash(frame_path);
+	local_j["image"] = frame_path;
 	j.push_back(local_j);
 
 	syslog(LOG_NOTICE, "ObjectDetector::generate_json End");
@@ -237,12 +247,19 @@ void ObjectDetector::loop() {
 
 	int framecount = 0;
 	std::string hash_video = md5_hash(filename);
+	cv::utils::fs::createDirectory(hash_video);
 
 	while(1) {
 		syslog(LOG_NOTICE, "Frame count : %d", framecount);
 		syslog(LOG_NOTICE, "Frame resolution : %d x %d", frame.rows, frame.cols);
 
 		capture >> frame;
+
+		if (frame.empty()) {
+			syslog(LOG_NOTICE, "Last read frame is empty, quitting.");
+			return; //break;
+		}
+
 		framecount++;
 #ifdef CATDETECTOR_ANALYSE_EVERY_24_FRAMES
 		if (framecount % 24 == 0)
@@ -260,7 +277,7 @@ void ObjectDetector::loop() {
 			std::ofstream myfile;
 			std::string videodata_filename(hash_video + ".json");
 			myfile.open (videodata_filename);
-			myfile << j << std::endl;
+			myfile << j.dump(0) << std::endl;
 			myfile.close();
 #endif
 			/* Sending the data as a Kafka producer */
