@@ -1,7 +1,7 @@
 /*
  * librdkafka - Apache Kafka C library
  *
- * Copyright (c) 2014, Magnus Edenhill
+ * Copyright (c) 2019, Magnus Edenhill
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,7 +27,7 @@
  */
 
 /**
- * Apache Kafka consumer & producer example programs
+ * Apache Kafka producer
  * using the Kafka driver from librdkafka
  * (https://github.com/edenhill/librdkafka)
  */
@@ -38,430 +38,180 @@
 #include <cstdio>
 #include <csignal>
 #include <cstring>
+#include <syslog.h>
 
-#ifndef _MSC_VER
-#include <sys/time.h>
-#endif
-
-#ifdef _MSC_VER
-#include "../win32/wingetopt.h"
-#include <atltime.h>
-#elif _AIX
-#include <unistd.h>
-#else
-#include <getopt.h>
+#if _AIX
 #include <unistd.h>
 #endif
 
-/*
- * Typically include path in a real application would be
- * #include <librdkafka/rdkafkacpp.h>
- */
-#include "rdkafkacpp.h"
+#include "kafkaproducer.h"
 
-
-
-static bool run = true;
-static bool exit_eof = false;
-static int eof_cnt = 0;
-static int partition_cnt = 0;
-static int verbosity = 1;
-static long msg_cnt = 0;
-static int64_t msg_bytes = 0;
-static void sigterm (int sig) {
-	(void)sig;
-	run = false;
-}
-
-
-/**
- * @brief format a string timestamp from the current time
- */
-static void print_time () {
-#ifndef _MSC_VER
-	struct timeval tv;
-	char buf[64];
-	gettimeofday(&tv, NULL);
-	strftime(buf, sizeof(buf) - 1, "%Y-%m-%d %H:%M:%S", localtime(&tv.tv_sec));
-	fprintf(stderr, "%s.%03d: ", buf, (int)(tv.tv_usec / 1000));
-#else
-	std::wcerr << CTime::GetCurrentTime().Format(_T("%Y-%m-%d %H:%M:%S")).GetString()
-                		<< ": ";
-#endif
-}
-class ExampleEventCb : public RdKafka::EventCb {
+class ExampleDeliveryReportCb : public RdKafka::DeliveryReportCb {
 public:
-	void event_cb (RdKafka::Event &event) {
-
-		print_time();
-
-		switch (event.type())
-		{
-		case RdKafka::Event::EVENT_ERROR:
-			if (event.fatal()) {
-				std::cerr << "FATAL ";
-				run = false;
-			}
-			std::cerr << "ERROR (" << RdKafka::err2str(event.err()) << "): " <<
-					event.str() << std::endl;
-			break;
-
-		case RdKafka::Event::EVENT_STATS:
-			std::cerr << "\"STATS\": " << event.str() << std::endl;
-			break;
-
-		case RdKafka::Event::EVENT_LOG:
-			fprintf(stderr, "LOG-%i-%s: %s\n",
-					event.severity(), event.fac().c_str(), event.str().c_str());
-			break;
-
-		case RdKafka::Event::EVENT_THROTTLE:
-			std::cerr << "THROTTLED: " << event.throttle_time() << "ms by " <<
-			event.broker_name() << " id " << (int)event.broker_id() << std::endl;
-			break;
-
-		default:
-			std::cerr << "EVENT " << event.type() <<
-			" (" << RdKafka::err2str(event.err()) << "): " <<
-			event.str() << std::endl;
-			break;
-		}
+	void dr_cb (RdKafka::Message &message) {
+		/* If message.err() is non-zero the message delivery failed permanently
+		 * for the message. */
+		if (message.err())
+			std::cerr << "% Message delivery failed: " << message.errstr() << std::endl;
+		else
+			std::cerr << "% Message delivered to topic " << message.topic_name() <<
+			" [" << message.partition() << "] at offset " <<
+			message.offset() << std::endl;
 	}
 };
 
-
-class ExampleRebalanceCb : public RdKafka::RebalanceCb {
-private:
-	static void part_list_print (const std::vector<RdKafka::TopicPartition*>&partitions){
-		for (unsigned int i = 0 ; i < partitions.size() ; i++)
-			std::cerr << partitions[i]->topic() <<
-			"[" << partitions[i]->partition() << "], ";
-		std::cerr << "\n";
-	}
-
-public:
-	void rebalance_cb (RdKafka::KafkaConsumer *consumer,
-			RdKafka::ErrorCode err,
-			std::vector<RdKafka::TopicPartition*> &partitions) {
-		std::cerr << "RebalanceCb: " << RdKafka::err2str(err) << ": ";
-
-		part_list_print(partitions);
-
-		if (err == RdKafka::ERR__ASSIGN_PARTITIONS) {
-			consumer->assign(partitions);
-			partition_cnt = (int)partitions.size();
-		} else {
-			consumer->unassign();
-			partition_cnt = 0;
-		}
-		eof_cnt = 0;
-	}
-};
-
-
-void msg_consume(RdKafka::Message* message, void* opaque) {
-	(void)opaque;
-	switch (message->err()) {
-	case RdKafka::ERR__TIMED_OUT:
-		break;
-
-	case RdKafka::ERR_NO_ERROR:
-		/* Real message */
-		msg_cnt++;
-		msg_bytes += message->len();
-		if (verbosity >= 3)
-			std::cerr << "Read msg at offset " << message->offset() << std::endl;
-		RdKafka::MessageTimestamp ts;
-		ts = message->timestamp();
-		if (verbosity >= 2 &&
-				ts.type != RdKafka::MessageTimestamp::MSG_TIMESTAMP_NOT_AVAILABLE) {
-			std::string tsname = "?";
-			if (ts.type == RdKafka::MessageTimestamp::MSG_TIMESTAMP_CREATE_TIME)
-				tsname = "create time";
-			else if (ts.type == RdKafka::MessageTimestamp::MSG_TIMESTAMP_LOG_APPEND_TIME)
-				tsname = "log append time";
-			std::cout << "Timestamp: " << tsname << " " << ts.timestamp << std::endl;
-		}
-		if (verbosity >= 2 && message->key()) {
-			std::cout << "Key: " << *message->key() << std::endl;
-		}
-		if (verbosity >= 1) {
-			printf("%.*s\n",
-					static_cast<int>(message->len()),
-					static_cast<const char *>(message->payload()));
-		}
-		break;
-
-	case RdKafka::ERR__PARTITION_EOF:
-		/* Last message */
-		if (exit_eof && ++eof_cnt == partition_cnt) {
-			std::cerr << "%% EOF reached for all " << partition_cnt <<
-					" partition(s)" << std::endl;
-			run = false;
-		}
-		break;
-
-	case RdKafka::ERR__UNKNOWN_TOPIC:
-	case RdKafka::ERR__UNKNOWN_PARTITION:
-		std::cerr << "Consume failed: " << message->errstr() << std::endl;
-		run = false;
-		break;
-
-	default:
-		/* Errors */
-		std::cerr << "Consume failed: " << message->errstr() << std::endl;
-		run = false;
-	}
-}
-
-void video_analyser_kafka_producer(std::string brokers, std::string topic_str)
+KafkaProducer::KafkaProducer(std::string broker_string, std::string topic_string)
 {
-	std::string errstr;
-	std::string mode;
-	std::string debug;
-	std::vector<std::string> topics;
-	bool do_conf_dump = false;
-	/* int opt; */
+	syslog(LOG_NOTICE, "KafkaProducer::KafkaProducer Start");
+	brokers = broker_string;
+	topic = topic_string;
 
 	/*
-	 * Create configuration objects
+	 * Create configuration object
 	 */
-	RdKafka::Conf *conf = RdKafka::Conf::create(RdKafka::Conf::CONF_GLOBAL);
-	RdKafka::Conf *tconf = RdKafka::Conf::create(RdKafka::Conf::CONF_TOPIC);
+	conf = RdKafka::Conf::create(RdKafka::Conf::CONF_GLOBAL);
 
-	ExampleRebalanceCb ex_rebalance_cb;
-	conf->set("rebalance_cb", &ex_rebalance_cb, errstr);
+	std::string errstr;
 
-	conf->set("enable.partition.eof", "true", errstr);
-
-	conf->set("group.id", "true", errstr);
-
-	conf->set("compression.codec", "true", errstr);
-
-#if 0
-	while ((opt = getopt(argc, argv, "g:b:z:qd:eX:AM:qv")) != -1) {
-		switch (opt) {
-		case 'g':
-			if (conf->set("group.id",  optarg, errstr) != RdKafka::Conf::CONF_OK) {
-				std::cerr << errstr << std::endl;
-				exit(1);
-			}
-			break;
-		case 'b':
-			brokers = optarg;
-			break;
-		case 'z':
-			if (conf->set("compression.codec", optarg, errstr) !=
-					RdKafka::Conf::CONF_OK) {
-				std::cerr << errstr << std::endl;
-				exit(1);
-			}
-			break;
-		case 'e':
-			exit_eof = true;
-			break;
-		case 'd':
-			debug = optarg;
-			break;
-		case 'M':
-			if (conf->set("statistics.interval.ms", optarg, errstr) !=
-					RdKafka::Conf::CONF_OK) {
-				std::cerr << errstr << std::endl;
-				exit(1);
-			}
-			break;
-		case 'X':
-		{
-			char *name, *val;
-
-			if (!strcmp(optarg, "dump")) {
-				do_conf_dump = true;
-				continue;
-			}
-
-			name = optarg;
-			if (!(val = strchr(name, '='))) {
-				std::cerr << "%% Expected -X property=value, not " <<
-						name << std::endl;
-				exit(1);
-			}
-
-			*val = '\0';
-			val++;
-
-			/* Try "topic." prefixed properties on topic
-			 * conf first, and then fall through to global if
-			 * it didnt match a topic configuration property. */
-			RdKafka::Conf::ConfResult res = RdKafka::Conf::CONF_UNKNOWN;
-			if (!strncmp(name, "topic.", strlen("topic.")))
-				res = tconf->set(name+strlen("topic."), val, errstr);
-			if (res == RdKafka::Conf::CONF_UNKNOWN)
-				res = conf->set(name, val, errstr);
-
-			if (res != RdKafka::Conf::CONF_OK) {
-				std::cerr << errstr << std::endl;
-				exit(1);
-			}
-		}
-		break;
-
-		case 'q':
-			verbosity--;
-			break;
-
-		case 'v':
-			verbosity++;
-			break;
-
-		default:
-			goto usage;
-		}
-	}
-
-	for (; optind < argc ; optind++)
-		topics.push_back(std::string(argv[optind]));
-
-	if (topics.empty() || optind != argc) {
-		usage:
-		fprintf(stderr,
-				"Usage: %s -g <group-id> [options] topic1 topic2..\n"
-				"\n"
-				"librdkafka version %s (0x%08x)\n"
-				"\n"
-				" Options:\n"
-				"  -g <group-id>   Consumer group id\n"
-				"  -b <brokers>    Broker address (localhost:9092)\n"
-				"  -z <codec>      Enable compression:\n"
-				"                  none|gzip|snappy\n"
-				"  -e              Exit consumer when last message\n"
-				"                  in partition has been received.\n"
-				"  -d [facs..]     Enable debugging contexts:\n"
-				"                  %s\n"
-				"  -M <intervalms> Enable statistics\n"
-				"  -X <prop=name>  Set arbitrary librdkafka "
-				"configuration property\n"
-				"                  Properties prefixed with \"topic.\" "
-				"will be set on topic object.\n"
-				"                  Use '-X list' to see the full list\n"
-				"                  of supported properties.\n"
-				"  -q              Quiet / Decrease verbosity\n"
-				"  -v              Increase verbosity\n"
-				"\n"
-				"\n",
-				argv[0],
-				RdKafka::version_str().c_str(), RdKafka::version(),
-				RdKafka::get_debug_contexts().c_str());
+	/* Set bootstrap broker(s) as a comma-separated list of
+	 * host or host:port (default port 9092).
+	 * librdkafka will use the bootstrap brokers to acquire the full
+	 * set of brokers from the cluster. */
+	if (conf->set("bootstrap.servers", brokers, errstr) != RdKafka::Conf::CONF_OK) {
+		std::cerr << errstr << std::endl;
 		exit(1);
 	}
-#endif
 
-	topics.push_back(topic_str);
-
-	/*
-	 * Set configuration properties
+	/* Set the delivery report callback.
+	 * This callback will be called once per message to inform
+	 * the application if delivery succeeded or failed.
+	 * See dr_msg_cb() above.
+	 * The callback is only triggered from ::poll() and ::flush().
+	 *
+	 * IMPORTANT:
+	 * Make sure the DeliveryReport instance outlives the Producer object,
+	 * either by putting it on the heap or as in this case as a stack variable
+	 * that will NOT go out of scope for the duration of the Producer object.
 	 */
-	conf->set("metadata.broker.list", brokers, errstr);
+	ExampleDeliveryReportCb ex_dr_cb;
 
-	if (!debug.empty()) {
-		if (conf->set("debug", debug, errstr) != RdKafka::Conf::CONF_OK) {
-			std::cerr << errstr << std::endl;
-			exit(1);
-		}
+	if (conf->set("dr_cb", &ex_dr_cb, errstr) != RdKafka::Conf::CONF_OK) {
+		std::cerr << errstr << std::endl;
+		exit(1);
 	}
 
-	ExampleEventCb ex_event_cb;
-	conf->set("event_cb", &ex_event_cb, errstr);
-
-	if (do_conf_dump) {
-		int pass;
-
-		for (pass = 0 ; pass < 2 ; pass++) {
-			std::list<std::string> *dump;
-			if (pass == 0) {
-				dump = conf->dump();
-				std::cout << "# Global config" << std::endl;
-			} else {
-				dump = tconf->dump();
-				std::cout << "# Topic config" << std::endl;
-			}
-
-			for (std::list<std::string>::iterator it = dump->begin();
-					it != dump->end(); ) {
-				std::cout << *it << " = ";
-				it++;
-				std::cout << *it << std::endl;
-				it++;
-			}
-			std::cout << std::endl;
-		}
-		exit(0);
-	}
-
-	conf->set("default_topic_conf", tconf, errstr);
-	delete tconf;
-
-	signal(SIGINT, sigterm);
-	signal(SIGTERM, sigterm);
-
-
 	/*
-	 * Consumer mode
+	 * Create producer instance.
 	 */
-
-	/*
-	 * Create consumer using accumulated global configuration.
-	 */
-	RdKafka::KafkaConsumer *consumer = RdKafka::KafkaConsumer::create(conf, errstr);
-	if (!consumer) {
-		std::cerr << "Failed to create consumer: " << errstr << std::endl;
+	producer = RdKafka::Producer::create(conf, errstr);
+	if (!producer) {
+		std::cerr << "Failed to create producer: " << errstr << std::endl;
 		exit(1);
 	}
 
 	delete conf;
 
-	std::cout << "% Created consumer " << consumer->name() << std::endl;
-
-
 	/*
-	 * Subscribe to topics
+	 * Read messages from stdin and produce to broker.
 	 */
-	RdKafka::ErrorCode err = consumer->subscribe(topics);
-	if (err) {
-		std::cerr << "Failed to subscribe to " << topics.size() << " topics: "
-				<< RdKafka::err2str(err) << std::endl;
-		exit(1);
-	}
+	std::cout << "% Type message value and hit enter " <<
+			"to produce message." << std::endl;
+	syslog(LOG_NOTICE, "KafkaProducer::KafkaProducer ENd");
+}
 
-	/*
-	 * Consume messages
-	 */
-	while (run) {
-		RdKafka::Message *msg = consumer->consume(1000);
-		msg_consume(msg, NULL);
-		delete msg;
-	}
+int KafkaProducer::produce(std::string buffer)
+{
+	syslog(LOG_NOTICE, "KafkaProducer::produce Start");
+	if (buffer.size() > 0) {
+		/*
+		 * Send/Produce message.
+		 * This is an asynchronous call, on success it will only
+		 * enqueue the message on the internal producer queue.
+		 * The actual delivery attempts to the broker are handled
+		 * by background threads.
+		 * The previously registered delivery report callback
+		 * is used to signal back to the application when the message
+		 * has been delivered (or failed permanently after retries).
+		 */
+		syslog(LOG_NOTICE, "KafkaProducer::produce %d", __LINE__);
+		RdKafka::ErrorCode err =
+				producer->produce(
+						/* Topic name */
+						topic,
+						/* Any Partition: the builtin partitioner will be
+						 * used to assign the message to a topic based
+						 * on the message key, or random partition if
+						 * the key is not set. */
+						RdKafka::Topic::PARTITION_UA,
+						/* Make a copy of the value */
+						RdKafka::Producer::RK_MSG_COPY /* Copy payload */,
+						/* Value */
+						const_cast<char *>(buffer.c_str()), buffer.size(),
+						/* Key */
+						NULL, 0,
+						/* Timestamp (defaults to current time) */
+						0,
+						/* Message headers, if any */
+						NULL,
+						/* Per-message opaque value passed to
+						 * delivery report */
+						NULL);
+		syslog(LOG_NOTICE, "KafkaProducer::produce %d", __LINE__);
+		if (err != RdKafka::ERR_NO_ERROR) {
+			std::cerr << "% Failed to produce to topic " << topic << ": " << RdKafka::err2str(err) << std::endl;
+		}
+		syslog(LOG_NOTICE, "KafkaProducer::produce %d", __LINE__);
+#if 0
+			if (err == RdKafka::ERR__QUEUE_FULL) {
+				/* If the internal queue is full, wait for
+				 * messages to be delivered and then retry.
+				 * The internal queue represents both
+				 * messages to be sent and messages that have
+				 * been sent or failed, awaiting their
+				 * delivery report callback to be called.
+				 *
+				 * The internal queue is limited by the
+				 * configuration property
+				 * queue.buffering.max.messages */
+				producer->poll(1000/*block for max 1000ms*/);
+				goto retry;
+			}
 
-#ifndef _MSC_VER
-	alarm(10);
+		} else {
+			std::cerr << "% Enqueued message (" << buffer.size() << " bytes) " <<
+					"for topic " << topic << std::endl;
+		}
 #endif
+	syslog(LOG_NOTICE, "KafkaProducer::produce %d", __LINE__);
+		/* A producer application should continually serve
+		 * the delivery report queue by calling poll()
+		 * at frequent intervals.
+		 * Either put the poll call in your main loop, or in a
+		 * dedicated thread, or call it after every produce() call.
+		 * Just make sure that poll() is still called
+		 * during periods where you are not producing any messages
+		 * to make sure previously produced messages have their
+		 * delivery report callback served (and any other callbacks
+		 * you register). */
+		//producer->poll(0);
+	}
+	/* Wait for final messages to be delivered or fail.
+	 * flush() is an abstraction over poll() which
+	 * waits for all messages to be delivered. */
+	syslog(LOG_NOTICE, "KafkaProducer::produce %d", __LINE__);
+	std::cerr << "% Flushing final messages..." << std::endl;
+	//producer->flush(10 /* wait for max 1 second  */);
+	syslog(LOG_NOTICE, "KafkaProducer::produce %d", __LINE__);
+	if (producer->outq_len() > 0)
+		std::cerr << "% " << producer->outq_len() << " message(s) were not delivered" << std::endl;
+	syslog(LOG_NOTICE, "KafkaProducer::produce %d", __LINE__);
+	syslog(LOG_NOTICE, "KafkaProducer::produce End");
+	return 0;
+}
 
-	/*
-	 * Stop consumer
-	 */
-	consumer->close();
-	delete consumer;
-
-	std::cerr << "% Consumed " << msg_cnt << " messages ("
-			<< msg_bytes << " bytes)" << std::endl;
-
-	/*
-	 * Wait for RdKafka to decommission.
-	 * This is not strictly needed (with check outq_len() above), but
-	 * allows RdKafka to clean up all its resources before the application
-	 * exits so that memory profilers such as valgrind wont complain about
-	 * memory leaks.
-	 */
-	RdKafka::wait_destroyed(5000);
-
-	return;
+KafkaProducer::~KafkaProducer()
+{
+	syslog(LOG_NOTICE, "KafkaProducer::~KafkaProducer Start");
+	delete producer;
+	syslog(LOG_NOTICE, "KafkaProducer::~KafkaProducer End");
 }

@@ -39,6 +39,8 @@
 #include "objectdetection.h"
 #include "md5_helper.h"
 
+#include "kafka/kafkaproducer.h"
+
 #include <opencv2/core/utils/filesystem.hpp>
 
 #define CATDETECTOR_ANALYSE_EVERY_24_FRAMES
@@ -229,6 +231,8 @@ void ObjectDetector::loop() {
 		throw "Error opening file.\n";
 	}
 
+	KafkaProducer producer("127.0.0.1", "Hello");
+
 	capture >> frame;
 
 	int ex = static_cast<int>(capture.get(cv::CAP_PROP_FOURCC));	// Get Codec Type- Int form
@@ -281,7 +285,8 @@ void ObjectDetector::loop() {
 			myfile.close();
 #endif
 			/* Sending the data as a Kafka producer */
-			/* video_analyser_kafka_producer(j.dump().c_str(), "TutorialTopic"); */
+			//video_analyser_kafka_producer(j.dump().c_str(), "catdetector");
+			producer.produce(j.dump().c_str());
 		}
 		if(cv::waitKey(30) >= 0) break;
 	}

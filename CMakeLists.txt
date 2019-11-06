@@ -4,7 +4,7 @@ project(directory_test)
 include_directories(include)
 
 #Can manually add the sources using the set command as follows:
-set(SOURCES src/catdetector.cpp src/objectdetection.cpp src/md5_helper.cpp)
+set(SOURCES src/catdetector.cpp src/objectdetection.cpp src/md5_helper.cpp src/kafka/kafkaproducer.cpp)
 
 set (OpenCV_DIR /home/utku/opencv4/opencv/build/)
 
@@ -25,14 +25,14 @@ foreach(dir ${dirs})
   message(STATUS "dir='${dir}'")
 endforeach()
 
-link_directories( /usr/local/lib /usr/lib/x86_64-linux-gnu)
+link_directories( ${OpenCV_LIBS} /usr/local/lib/)
 
 set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} ${GCC_COVERAGE_COMPILE_FLAGS} -Wall -Wextra -pedantic -std=c++14 -g")
 set(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} ${GCC_COVERAGE_LINK_FLAGS}")
 
-file(GLOB SOURCES "src/catdetector.cpp" "src/objectdetection.cpp" "src/md5_helper.cpp")
+file(GLOB ${SOURCES} ${SOURCES})
 
 add_executable(Manager ${SOURCES})
 
 # Link your application with OpenCV libraries
-target_link_libraries(Manager ${OpenCV_LIBS} tensorflow ssl crypto)
+target_link_libraries(Manager ${OpenCV_LIBS} tensorflow ssl crypto rdkafka++)

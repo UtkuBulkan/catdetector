@@ -37,13 +37,17 @@
 
 #include <syslog.h>
 
-int main()
+int main(int argc, char *argv[])
 {
 	setlogmask (LOG_UPTO (LOG_NOTICE));
 	openlog ("catdetector", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
 
 	ObjectDetector obj;
-	obj.filename = "./demo.mp4";
+	if(argc == 1) {
+		obj.filename = "./demo.mp4";
+	} else {
+		obj.filename.assign(argv[1]);
+	}
 	obj.loop();
 
 	closelog ();
