@@ -47,6 +47,8 @@
 #define CATDETECTOR_ENABLE_OUTPUT_TO_VIDEO_FILE
 #define CATDETECTOR_ENABLE_CAPTURED_FRAMES_TO_JSON
 
+std::string output_directory="data/";
+
 ObjectDetector::ObjectDetector() : confidence_threshold(0.9),
 mask_threshold(0.3),
 class_definition_file("../data/mscoco_labels.names"),
@@ -114,15 +116,15 @@ void ObjectDetector::draw_box(cv::Mat& frame, int classId, float confidence, cv:
 	coloredRoi = (0.3 * color + 0.7 * frame(box));
 	coloredRoi.convertTo(coloredRoi, CV_8UC3);
 
-	mask.convertTo(mask, CV_8U);
-	cv::findContours(mask, contours, hierarchy, cv::RETR_CCOMP, cv::CHAIN_APPROX_SIMPLE);
-	cv::drawContours(coloredRoi, contours, -1, color, 5, cv::LINE_8, hierarchy, 100);
-	coloredRoi.copyTo(frame(box), mask);
+//	mask.convertTo(mask, CV_8U);
+//	cv::findContours(mask, contours, hierarchy, cv::RETR_CCOMP, cv::CHAIN_APPROX_SIMPLE);
+//	cv::drawContours(coloredRoi, contours, -1, color, 5, cv::LINE_8, hierarchy, 100);
+//	coloredRoi.copyTo(frame(box), mask);
 
 	syslog(LOG_NOTICE, "ObjectDetector::draw_box End");
 }
 
-void ObjectDetector::generate_json(cv::Mat &frame, const int &classId, const int &framecount, std::string frame_md5, std::string video_md5)
+void ObjectDetector::generate_json(cv::Mat &frame, const int &classId, const int &framecount, const int &itemid, std::string frame_md5, std::string video_md5)
 {
 	syslog(LOG_NOTICE, "ObjectDetector::generate_json Begin");
 
@@ -134,27 +136,46 @@ void ObjectDetector::generate_json(cv::Mat &frame, const int &classId, const int
 
 	std::vector<uchar> buffer;
 #define MB 1024 * 1024
-	std::string frame_path;
-	frame_path.append("./");
-	frame_path.append(video_md5);
-	frame_path.append("/");
-	frame_path.append(std::to_string(framecount/24));
-	frame_path.append("-");
-	frame_path.append(classes[classId]);
-	frame_path.append(".jpg");
+	std::string frame_path, frame_name, frame_directory;
+	frame_directory.append(output_directory);
+	frame_directory.append(video_md5);
+	frame_directory.append("/");
+	frame_name.append(std::to_string(framecount/24));
+	frame_name.append("-");
+	frame_name.append(std::to_string(itemid));
+	frame_name.append("-");
+	frame_name.append(classes[classId]);
+	frame_name.append(".jpg");
+
+	frame_path.append(frame_directory);
+	frame_path.append(frame_name);
 
 	imwrite(frame_path, frame);
 	local_j["hash-frame"] = md5_hash(frame_path);
 	local_j["image"] = frame_path;
 	j.push_back(local_j);
 
+	generate_html_thumbnail(frame_path, frame_name);
+
 	syslog(LOG_NOTICE, "ObjectDetector::generate_json End");
+}
+
+void ObjectDetector::generate_html_thumbnail(std::string frame_directory, std::string frame_name)
+{
+	html_file << "<html>" << std::endl;
+	html_file << "<body>" << std::endl;
+	html_file << "<a target=\"_blank\" href=\"" << frame_name << "\">" << std::endl;
+	html_file << "<img src=\"" << frame_name << "\" style=\"float: left;display: block;max-width:150px;max-height:150px;width: auto;height: auto;\">" << std::endl;
+	html_file << "</a>" << std::endl;
+	html_file << "</body>" << std::endl;
+	html_file << "</html>" << std::endl;
 }
 
 void ObjectDetector::post_process(cv::Mat& frame, const std::vector<cv::Mat>& outs, int framecount, std::string hash_video)
 {
 	syslog(LOG_NOTICE, "ObjectDetector::post_process Begin");
 
+	cv::Mat original_frame = frame.clone();
 	cv::Mat output_detections = outs[0], outMasks = outs[1];
 	const int num_detections = output_detections.size[2];
 	const int num_classes = outMasks.size[1];
@@ -182,9 +203,12 @@ void ObjectDetector::post_process(cv::Mat& frame, const std::vector<cv::Mat>& ou
 
 			cv::Rect box = cv::Rect(left, top, right - left + 1, bottom - top + 1);
 			cv::Mat objectMask(outMasks.size[2], outMasks.size[3],CV_32F, outMasks.ptr<float>(i,classId));
-			draw_box(frame, classId, score, box, objectMask);
 
-			generate_json(frame, classId, framecount, "", hash_video);
+			cv::Mat detected_object;
+			original_frame(cv::Rect(left, top, right - left + 1, bottom - top + 1)).copyTo(detected_object);
+			generate_json(detected_object, classId, framecount, i, "", hash_video);
+
+			draw_box(frame, classId, score, box, objectMask);
 		}
 	}
 
@@ -251,7 +275,11 @@ void ObjectDetector::loop() {
 
 	int framecount = 0;
 	std::string hash_video = md5_hash(filename);
-	cv::utils::fs::createDirectory(hash_video);
+	cv::utils::fs::createDirectory(output_directory);
+	cv::utils::fs::createDirectory(output_directory + hash_video);
+
+	std::string html_videodata_filename(output_directory + hash_video + "/" + hash_video + ".html");
+	html_file.open (html_videodata_filename);
 
 	while(1) {
 		syslog(LOG_NOTICE, "Frame count : %d", framecount);
@@ -278,11 +306,11 @@ void ObjectDetector::loop() {
 
 #ifdef CATDETECTOR_ENABLE_CAPTURED_FRAMES_TO_JSON
 			/* Outputting captured frames to json */
-			std::ofstream myfile;
-			std::string videodata_filename(hash_video + ".json");
-			myfile.open (videodata_filename);
-			myfile << j.dump(0) << std::endl;
-			myfile.close();
+			std::ofstream json_file;
+			std::string json_videodata_filename(output_directory + hash_video + "/" + hash_video + ".json"); 
+			json_file.open (json_videodata_filename);
+			json_file << j.dump(0) << std::endl;
+			json_file.close();
 #endif
 			/* Sending the data as a Kafka producer */
 			//video_analyser_kafka_producer(j.dump().c_str(), "catdetector");
@@ -290,5 +318,6 @@ void ObjectDetector::loop() {
 		}
 		if(cv::waitKey(30) >= 0) break;
 	}
+	html_file.close();
 	outputVideo.release();
 }

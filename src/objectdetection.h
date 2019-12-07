@@ -28,6 +28,9 @@
 #include <string>
 #include "json.hpp"
 
+#include <fstream>
+#include <iostream>
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -42,7 +45,8 @@ public:
 	void draw_box(cv::Mat& frame, int classId, float conf, cv::Rect box, cv::Mat& objectMask);
 	void post_process(cv::Mat& frame, const std::vector<cv::Mat>& outs, int framecount, std::string hash_video);
 	void loop();
-	void generate_json(cv::Mat &frame, const int &classId, const int &framecount, std::string frame_md5, std::string video_md5);
+	void generate_json(cv::Mat &frame, const int &classId, const int &framecount, const int &itemid, std::string frame_md5, std::string video_md5);
+	void generate_html_thumbnail(std::string frame_directory, std::string frame_name);
 
 	std::string filename;
 private:
@@ -59,4 +63,5 @@ private:
 	std::string model_weights_file;
 
 	json j;
+	std::ofstream html_file;
 };
