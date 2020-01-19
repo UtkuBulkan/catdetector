@@ -256,6 +256,7 @@ void ObjectDetector::loop() {
 	}
 
 	KafkaProducer producer("127.0.0.1", "Hello");
+	KafkaProducer video_data_kafka_topic("127.0.0.1", "Video");
 
 	capture >> frame;
 
@@ -274,12 +275,19 @@ void ObjectDetector::loop() {
 	cv::resizeWindow("Camera1", 640, 480);
 
 	int framecount = 0;
-	std::string hash_video = md5_hash(filename);
+	std::string hash_video = uuid; //md5_hash(filename);
 	cv::utils::fs::createDirectory(output_directory);
 	cv::utils::fs::createDirectory(output_directory + hash_video);
 
 	std::string html_videodata_filename(output_directory + hash_video + "/" + hash_video + ".html");
 	html_file.open (html_videodata_filename);
+
+	json video_info_json;
+	video_info_json["id"] = hash_video;
+	video_info_json["video_name"] = filename;
+	video_info_json["video_path"] = output_directory;
+	video_info_json["video_hash"] = hash_video;
+	producer.produce(video_info_json.dump().c_str());
 
 	while(1) {
 		syslog(LOG_NOTICE, "Frame count : %d", framecount);

@@ -43,10 +43,13 @@ int main(int argc, char *argv[])
 	openlog ("catdetector", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
 
 	ObjectDetector obj;
-	if(argc == 1) {
-		obj.filename = "./demo.mp4";
-	} else {
+
+	if (argc == 3) {
 		obj.filename.assign(argv[1]);
+		obj.uuid.assign(argv[2]);
+		syslog(LOG_NOTICE, "Filename : %s, UUID : %s", obj.filename, obj.uuid);
+	} else{
+		obj.filename = "./demo.mp4";
 	}
 	obj.loop();
 

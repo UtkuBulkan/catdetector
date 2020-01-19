@@ -49,6 +49,7 @@ public:
 	void generate_html_thumbnail(std::string frame_directory, std::string frame_name);
 
 	std::string filename;
+	std::string uuid;
 private:
 	// Initialize the parameters
 	float confidence_threshold; // Confidence threshold
