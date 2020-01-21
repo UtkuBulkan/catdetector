@@ -1,0 +1,45 @@
+catdetector'u compile edebilecek self contained bir docker image'a ihtiyacimiz olacak. (daha sonra jenkins vs bunu kullanarak build etsin diye.)
+bu ayni zamanda kendisine development ortamini kuracak birisi icinde kolaylik saglayacak
+
+bu imaji build etmek icin asagidakini kullaniyorum.
+
+- hali hazirda kendime base olarak belirledigim bir imaji calistirip arka planda durmasini sagliyorum.
+
+  [root@srvpro02 catdetector]# docker run --name catdetector-compiler -d rikorose/gcc-cmake:gcc-7 sleep infinity
+  595a37ee7a05373d2e1a33b9bfed797dce0e240352ae5e362df45dd0755de861
+  
+- kontrol ediyorum calistimi diye
+  [root@srvpro02 catdetector]# docker ps
+  CONTAINER ID        IMAGE                      COMMAND             CREATED             STATUS              PORTS               NAMES
+  595a37ee7a05        rikorose/gcc-cmake:gcc-7   "sleep infinity"    43 seconds ago      Up 42 seconds                           catdetector-compiler
+
+- sonra asagidaki docker exec ile, container'in icerisine girip dependencyleri install edecegim
+
+  [root@srvpro02 catdetector]# docker exec -it catdetector-compiler bash
+  root@595a37ee7a05:/#
+
+- prompt degisti, burasi kendi bilgisayarimdan bagimsiz gecici bir ortam. container'i docker rm ile sildigimde kaybolacak.
+- ama burada dependecyleri yuklemek icin gerekli, komutlara ihtiyacim var. daha sonra bunlari Ayni dizindeki Dockerfile'a yazacagim.
+
+  root@595a37ee7a05:/# apt-get install -y build-essential git
+  Reading package lists... Done
+  Building dependency tree
+  Reading state information... Done
+  Package build-essential is not available, but is referred to by another package.
+  This may mean that the package is missing, has been obsoleted, or
+  is only available from another source
+  
+  E: Package 'build-essential' has no installation candidate
+  root@595a37ee7a05:/# exit
+  [root@srvpro02 catdetector]# 
+
+
+
+
+- Dockerfile'im hazir olunca asagidaki gibi calistirabilirim.
+docker build -t catdetector:latest .
+docker run --name catdetector-compiler -d catdetector:latest sleep infinity        # imajin adi degisti.
+
+Cunku artik elimde "rikorose/gcc-cmake:gcc-7" den turetilmis, ve build edebildigim bir imaj var. bunu dockerhub a koyabilirim, isteyen alip kolayca build edebilir, gelistirebilir vs.
+
+
