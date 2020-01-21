@@ -28,37 +28,22 @@
  * -and-instance-segmentation-using-mask-r-cnn-in-opencv-python-c/
  *
  */
-#include <fstream>
-#include <iostream>
+
 #include <string>
 #include <vector>
-#include <sstream>
-#include "camera_manager.h"
+#include "objectdetection.h"
 
-#include <syslog.h>
+#define inpHeight 416
+#define inpWidth 416
 
-int main(int argc, char *argv[])
+class ObjectDetector_Yolo : public ObjectDetector
 {
-	setlogmask (LOG_UPTO (LOG_NOTICE));
-	openlog ("catdetector", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
-	std::string filename, uuid;
-	ObjectDetector *obj = ObjectDetector::GenerateDetector("Yolo");
-
-	if (argc > 1) {
-		syslog(LOG_NOTICE, "Number of args : %d", argc);
-		std::vector<std::string> all_args;
-
-		all_args.assign(argv + 1, argv + argc);
-		filename = all_args[0];
-		uuid = all_args[1];
-		syslog(LOG_NOTICE, "Size of args : %d, Filename : %s, UUID : %s", (int) all_args.size(), filename.c_str(), uuid.c_str());
-	} else{
-		filename = "./demo.mp4";
-	}
-	Camera *camera = new Camera(filename, uuid);
-	camera->set_models({obj});
-
-	camera->process_frame();
-
-	closelog ();
-}
+public:
+	ObjectDetector_Yolo();
+	~ObjectDetector_Yolo();
+private:
+	std::string process_frame(cv::Mat &frame, cv::Mat &output_frame, std::vector<std::pair<cv::Mat, std::string> > &detections);
+	void post_process(cv::Mat &frame, cv::Mat &output_frame, std::vector<cv::Mat> detection_data, std::vector<std::pair<cv::Mat, std::string> > & detections);
+	void draw_prediction_indicators(int classId, float conf, int left, int top, int right, int bottom, cv::Mat& frame);
+	std::vector<std::string> get_output_layer_names();
+};

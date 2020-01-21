@@ -4,7 +4,7 @@ project(directory_test)
 include_directories(include)
 
 #Can manually add the sources using the set command as follows:
-set(SOURCES src/catdetector.cpp src/objectdetection.cpp src/md5_helper.cpp src/kafka/kafkaproducer.cpp)
+set(SOURCES src/catdetector.cpp  src/camera_manager.cpp src/objectdetection.cpp src/objectdetection_yolo.cpp  src/md5_helper.cpp src/kafka/kafkaproducer.cpp)
 
 set (OpenCV_DIR /home/utku/opencv4/opencv/build/)
 

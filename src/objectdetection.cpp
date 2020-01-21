@@ -28,235 +28,98 @@
  * -and-instance-segmentation-using-mask-r-cnn-in-opencv-python-c/
  *
  */
-#include <fstream>
-#include <iostream>
 #include <string>
-#include <vector>
-#include <sstream>
 #include <syslog.h>
 
-#include "tensorflow/c/c_api.h"
-#include "objectdetection.h"
-#include "md5_helper.h"
+#include "objectdetection_yolo.h"
 
-#include "kafka/kafkaproducer.h"
-
-#include <opencv2/core/utils/filesystem.hpp>
-
-#define CATDETECTOR_ANALYSE_EVERY_24_FRAMES
-#define CATDETECTOR_ENABLE_OUTPUT_TO_VIDEO_FILE
-#define CATDETECTOR_ENABLE_CAPTURED_FRAMES_TO_JSON
-
-std::string output_directory="data/";
-
-ObjectDetector::ObjectDetector() : confidence_threshold(0.9),
-mask_threshold(0.3),
-class_definition_file("../data/mscoco_labels.names"),
-colors_file("../data/colors.txt"),
-text_graph_file("../data/mask_rcnn_inception_v2_coco_2018_01_28.pbtxt"),
-model_weights_file("../data/frozen_inference_graph.pb")
+ObjectDetector* ObjectDetector::GenerateDetector(std::string objectdetector_type_string)
 {
-	syslog (LOG_NOTICE, "ObjectDetector Constructor Begin");
+	if (objectdetector_type_string == "Yolo")
+		return new ObjectDetector_Yolo;
 
-	std::ifstream classes_file_stream(class_definition_file.c_str());
-	std::ifstream colors_file_stream(colors_file.c_str());
-	std::string line;
+	return NULL;
+}
 
-	while (getline(classes_file_stream, line)) {
-		classes.push_back(line);
-		syslog (LOG_NOTICE, "Class Labels : %s", line.c_str());
+ObjectDetector::ObjectDetector() : 	m_confidence_threshold(0.5), m_nms_threshold(0.4) {}
+
+ObjectDetector::~ObjectDetector() {}
+
+void ObjectDetector::setup_model_for_detector(std::string class_definition_file, std::string model_config_file, std::string model_weights_file)
+{
+	m_model_config_file = model_config_file;
+	m_model_weights_file = model_weights_file;
+	m_class_definition_file = class_definition_file;
+}
+
+void ObjectDetector::load_model_classes_for_detector()
+{
+	std::ifstream classes_file_stream(m_class_definition_file.c_str());
+	std::string class_file_line;
+
+	while (getline(classes_file_stream, class_file_line)) {
+		classes.push_back(class_file_line);
+		syslog (LOG_NOTICE, "Class Labels : %s", class_file_line.c_str());
 	}
 
-	while (getline(colors_file_stream, line)) {
-		std::stringstream ss(line);
+	std::ifstream colors_file_stream(colors_file.c_str());
+	std::string colors_file_line;
+
+	while (getline(colors_file_stream, colors_file_line)) {
+		std::stringstream ss(colors_file_line);
 		double red, green, blue;
 		ss >> red >> green >> blue;
 		colors.push_back(cv::Scalar(red, green, blue, 255.0));
 		syslog (LOG_NOTICE, "Colors.txt Colors : %f, %f, %f", red, green, blue);
 	}
+}
 
+void ObjectDetector::load_network_model_for_detector(std::string network_type)
+{
 	// Load the network for the model
 	syslog (LOG_NOTICE, "ObjectDetector Loading Network");
-	net = cv::dnn::readNetFromTensorflow(model_weights_file, text_graph_file);
+	if (network_type == "Darknet") {
+		net = cv::dnn::readNetFromDarknet(m_model_config_file, m_model_weights_file);
+	} else if(network_type == "Caffe") {
+		net = cv::dnn::readNetFromCaffe(m_model_config_file, m_model_weights_file);
+	}
 	net.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
 	net.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
 	syslog (LOG_NOTICE, "ObjectDetector Network Loaded");
-
-	syslog (LOG_NOTICE, "ObjectDetector Constructor End");
 }
 
-ObjectDetector::~ObjectDetector() {
-}
-
-void ObjectDetector::draw_box(cv::Mat& frame, int classId, float confidence, cv::Rect box, cv::Mat& objectMask)
+std::vector < std::string > ObjectDetector::get_class_labels()
 {
-	syslog(LOG_NOTICE, "ObjectDetector::draw_box Begin");
-
-	std::string label = cv::format("%2.2f", confidence);
-	std::vector<cv::Mat> contours;
-	cv::Mat hierarchy, mask, coloredRoi;
-	cv::Size labelSize;
-	cv::Scalar color;
-	int baseLine;
-
-	cv::rectangle(frame, cv::Point(box.x, box.y), cv::Point(box.x+box.width, box.y+box.height),cv::Scalar(255, 178, 50), 3);
-	if (!classes.empty())
-	{
-		CV_Assert(classId < (int)classes.size());
-		label = classes[classId] + ":" + label;
-	}
-	labelSize = cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX, 0.5, 1, &baseLine);
-	box.y = cv::max(box.y, labelSize.height);
-	cv::rectangle(frame, cv::Point(box.x, box.y - round(1.5*labelSize.height)), cv::Point(box.x + round(1.5*labelSize.width), box.y + baseLine), cv::Scalar(255, 255, 255), cv::FILLED);
-	cv::putText(frame, label, cv::Point(box.x, box.y), cv::FONT_HERSHEY_SIMPLEX, 0.75, cv::Scalar(0,0,0),1);
-	color = colors[classId%colors.size()];
-
-	cv::resize(objectMask, objectMask, cv::Size(box.width, box.height));
-	mask = (objectMask > mask_threshold);
-	coloredRoi = (0.3 * color + 0.7 * frame(box));
-	coloredRoi.convertTo(coloredRoi, CV_8UC3);
-
-//	mask.convertTo(mask, CV_8U);
-//	cv::findContours(mask, contours, hierarchy, cv::RETR_CCOMP, cv::CHAIN_APPROX_SIMPLE);
-//	cv::drawContours(coloredRoi, contours, -1, color, 5, cv::LINE_8, hierarchy, 100);
-//	coloredRoi.copyTo(frame(box), mask);
-
-	syslog(LOG_NOTICE, "ObjectDetector::draw_box End");
+	return classes;
 }
 
-void ObjectDetector::generate_json(cv::Mat &frame, const int &classId, const int &framecount, const int &itemid, std::string frame_md5, std::string video_md5)
+float ObjectDetector::get_confidence_threshold()
 {
-	syslog(LOG_NOTICE, "ObjectDetector::generate_json Begin");
-
-	json local_j;
-
-	local_j["class"] = classes[classId].c_str();
-	local_j["frame"] = framecount;
-	local_j["hash-video"] = video_md5;
-
-	std::vector<uchar> buffer;
-#define MB 1024 * 1024
-	std::string frame_path, frame_name, frame_directory;
-	frame_directory.append(output_directory);
-	frame_directory.append(video_md5);
-	frame_directory.append("/");
-	frame_name.append(std::to_string(framecount/24));
-	frame_name.append("-");
-	frame_name.append(std::to_string(itemid));
-	frame_name.append("-");
-	frame_name.append(classes[classId]);
-	frame_name.append(".jpg");
-
-	frame_path.append(frame_directory);
-	frame_path.append(frame_name);
-
-	imwrite(frame_path, frame);
-	local_j["hash-frame"] = md5_hash(frame_path);
-	local_j["image"] = frame_path;
-	j.push_back(local_j);
-
-	generate_html_thumbnail(frame_path, frame_name);
-
-	syslog(LOG_NOTICE, "ObjectDetector::generate_json End");
+	return m_confidence_threshold;
 }
 
-void ObjectDetector::generate_html_thumbnail(std::string frame_directory, std::string frame_name)
+float ObjectDetector::get_nms_threshold()
 {
-	html_file << "<html>" << std::endl;
-	html_file << "<body>" << std::endl;
-	html_file << "<a target=\"_blank\" href=\"" << frame_name << "\">" << std::endl;
-	html_file << "<img src=\"" << frame_name << "\" style=\"float: left;display: block;max-width:150px;max-height:150px;width: auto;height: auto;\">" << std::endl;
-	html_file << "</a>" << std::endl;
-	html_file << "</body>" << std::endl;
-	html_file << "</html>" << std::endl;
+	return m_nms_threshold;
 }
 
-void ObjectDetector::post_process(cv::Mat& frame, const std::vector<cv::Mat>& outs, int framecount, std::string hash_video)
+cv::dnn::Net ObjectDetector::get_net()
 {
-	syslog(LOG_NOTICE, "ObjectDetector::post_process Begin");
-
-	cv::Mat original_frame = frame.clone();
-	cv::Mat output_detections = outs[0], outMasks = outs[1];
-	const int num_detections = output_detections.size[2];
-	const int num_classes = outMasks.size[1];
-
-	output_detections = output_detections.reshape(1, output_detections.total() / 7);
-	syslog(LOG_NOTICE, "Object Detector postprocess num_detections : %d", num_detections);
-	syslog(LOG_NOTICE, "Object Detector postprocess num_classes : %d", num_classes);
-	for (int i = 0; i < num_detections; ++i)
-	{
-		float score = output_detections.at<float>(i, 2);
-		if (score > confidence_threshold)
-		{
-			int classId = static_cast<int>(output_detections.at<float>(i, 1));
-			int left = static_cast<int>(frame.cols * output_detections.at<float>(i, 3));
-			int top = static_cast<int>(frame.rows * output_detections.at<float>(i, 4));
-			int right = static_cast<int>(frame.cols * output_detections.at<float>(i, 5));
-			int bottom = static_cast<int>(frame.rows * output_detections.at<float>(i, 6));
-
-			left = cv::max(0, cv::min(left, frame.cols - 1));
-			top = cv::max(0, cv::min(top, frame.rows - 1));
-			right = cv::max(0, cv::min(right, frame.cols - 1));
-			bottom = cv::max(0, cv::min(bottom, frame.rows - 1));
-
-			syslog(LOG_NOTICE, "%d - %d,%d,%d,%d, framewidth : %d, frameheight : %d", i, left, top, right, bottom, frame.cols, frame.rows);
-
-			cv::Rect box = cv::Rect(left, top, right - left + 1, bottom - top + 1);
-			cv::Mat objectMask(outMasks.size[2], outMasks.size[3],CV_32F, outMasks.ptr<float>(i,classId));
-
-			cv::Mat detected_object;
-			original_frame(cv::Rect(left, top, right - left + 1, bottom - top + 1)).copyTo(detected_object);
-			generate_json(detected_object, classId, framecount, i, "", hash_video);
-
-			draw_box(frame, classId, score, box, objectMask);
-		}
-	}
-
-	syslog(LOG_NOTICE, "ObjectDetector::post_process End");
+	return net;
 }
 
-void ObjectDetector::process_frame(cv::Mat &frame, int framecount, std::string hash_video) {
-	std::vector<std::string> outNames(2);
-	std::vector<double> layersTimes;
-	std::vector<cv::Mat> outs;
-	std::string label;
-	cv::Mat blob;
-	double freq, t;
-
-	syslog(LOG_NOTICE, "ObjectDetector::process_frame Begin");
-
-	//cv::dnn::blobFromImage(frame, blob);
-	cv::dnn::blobFromImage(frame, blob, 1.0, cv::Size(frame.cols, frame.rows), cv::Scalar(), true, false);
-	net.setInput(blob);
-	outNames[0] = "detection_out_final";
-	outNames[1] = "detection_masks";
-	net.forward(outs, outNames);
-	syslog(LOG_NOTICE, "Number of outs : %d", (int) outs.size());
-
-	post_process(frame, outs, framecount, hash_video);
-	freq = cv::getTickFrequency() / 1000;
-	t = net.getPerfProfile(layersTimes) / freq;
-	label = cv::format("London South Bank University - Utku Bulkan - Frame processing time: %.2f ms", t);
-	cv::putText(frame, label, cv::Point(0, 20), cv::FONT_HERSHEY_SIMPLEX, 0.9, cv::Scalar(0, 0, 0));
-
-	syslog(LOG_NOTICE, "ObjectDetector::process_frame End");
-}
-
+#if 0
 void ObjectDetector::loop() {
 	cv::Mat frame;
 	cv::VideoCapture capture;
 	cv::VideoWriter outputVideo;
 
-	syslog(LOG_NOTICE, "Hello from TensorFlow C library version : %s", TF_Version());
 	syslog(LOG_NOTICE, "Opening file : %s", filename.c_str());
 
 	capture.open(filename);
 	if ( !capture.isOpened	() ) {
 		throw "Error opening file.\n";
 	}
-
-	KafkaProducer producer("127.0.0.1", "Hello");
-	KafkaProducer video_data_kafka_topic("127.0.0.1", "Video");
 
 	capture >> frame;
 
@@ -275,31 +138,13 @@ void ObjectDetector::loop() {
 	cv::resizeWindow("Camera1", 640, 480);
 
 	int framecount = 0;
-	std::string hash_video = uuid; //md5_hash(filename);
-	cv::utils::fs::createDirectory(output_directory);
-	cv::utils::fs::createDirectory(output_directory + hash_video);
-
-	std::string html_videodata_filename(output_directory + hash_video + "/" + hash_video + ".html");
-	html_file.open (html_videodata_filename);
-
-	json video_info_json;
-	video_info_json["id"] = hash_video;
-	video_info_json["video_name"] = filename;
-	video_info_json["video_path"] = output_directory;
-	video_info_json["video_hash"] = hash_video;
-	producer.produce(video_info_json.dump().c_str());
+	std::string hash_video = "1";
 
 	while(1) {
 		syslog(LOG_NOTICE, "Frame count : %d", framecount);
 		syslog(LOG_NOTICE, "Frame resolution : %d x %d", frame.rows, frame.cols);
 
 		capture >> frame;
-
-		if (frame.empty()) {
-			syslog(LOG_NOTICE, "Last read frame is empty, quitting.");
-			return; //break;
-		}
-
 		framecount++;
 #ifdef CATDETECTOR_ANALYSE_EVERY_24_FRAMES
 		if (framecount % 24 == 0)
@@ -314,18 +159,17 @@ void ObjectDetector::loop() {
 
 #ifdef CATDETECTOR_ENABLE_CAPTURED_FRAMES_TO_JSON
 			/* Outputting captured frames to json */
-			std::ofstream json_file;
-			std::string json_videodata_filename(output_directory + hash_video + "/" + hash_video + ".json"); 
-			json_file.open (json_videodata_filename);
-			json_file << j.dump(0) << std::endl;
-			json_file.close();
+			std::ofstream myfile;
+			std::string videodata_filename(hash_video + ".json");
+			myfile.open (videodata_filename);
+			myfile << j << std::endl;
+			myfile.close();
 #endif
 			/* Sending the data as a Kafka producer */
-			//video_analyser_kafka_producer(j.dump().c_str(), "catdetector");
-			producer.produce(j.dump().c_str());
+			/* video_analyser_kafka_producer(j.dump().c_str(), "TutorialTopic"); */
 		}
 		if(cv::waitKey(30) >= 0) break;
 	}
-	html_file.close();
 	outputVideo.release();
 }
+#endif

@@ -38,30 +38,51 @@
 using json = nlohmann::json;
 
 class ObjectDetector {
+
 public:
-	ObjectDetector();
-	~ObjectDetector();
-	void process_frame(cv::Mat &frame, int framecount, std::string hash_video);
+	static ObjectDetector* GenerateDetector(std::string objectdetector_type);
+
+	void setup_model_for_detector(std::string class_definition_file, std::string model_config_file, std::string model_weights_file);
+	void load_model_classes_for_detector();
+	void load_network_model_for_detector(std::string network_type);
+	std::vector < std::string > get_class_labels();
+
+	float get_confidence_threshold();
+	float get_nms_threshold();
+	cv::dnn::Net get_net();
+
+	virtual std::string process_frame(cv::Mat &frame, cv::Mat &output_frame, std::vector<std::pair<cv::Mat, std::string> > &detections) = 0;
+
 	void draw_box(cv::Mat& frame, int classId, float conf, cv::Rect box, cv::Mat& objectMask);
 	void post_process(cv::Mat& frame, const std::vector<cv::Mat>& outs, int framecount, std::string hash_video);
-	void loop();
+
 	void generate_json(cv::Mat &frame, const int &classId, const int &framecount, const int &itemid, std::string frame_md5, std::string video_md5);
 	void generate_html_thumbnail(std::string frame_directory, std::string frame_name);
 
 	std::string filename;
 	std::string uuid;
+
+protected :
+	ObjectDetector();
+	~ObjectDetector();
+	virtual void post_process(cv::Mat& frame, cv::Mat &output_frame, std::vector<cv::Mat> detection_data, std::vector<std::pair<cv::Mat, std::string> > & detections) = 0;
+	virtual void draw_prediction_indicators(int classId, float conf, int left, int top, int right, int bottom, cv::Mat& output_frame) = 0;
+
 private:
 	// Initialize the parameters
-	float confidence_threshold; // Confidence threshold
-	float mask_threshold; // Mask threshold
-	cv::dnn::Net net;
 	std::vector < std::string > classes;
 	std::vector<cv::Scalar> colors;
 	// Give the configuration and weight files for the model
-	std::string class_definition_file;
 	std::string colors_file;
-	std::string text_graph_file;
-	std::string model_weights_file;
+	std::string m_class_definition_file;
+	std::string m_model_config_file;
+	std::string m_model_weights_file;
+
+	// Initialize the parameters
+	float m_confidence_threshold; // Confidence threshold
+	float m_nms_threshold; // non-maximum suppression threshold
+
+	cv::dnn::Net net;
 
 	json j;
 	std::ofstream html_file;
