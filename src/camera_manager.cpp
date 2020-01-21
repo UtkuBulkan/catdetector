@@ -32,6 +32,8 @@
 #include <syslog.h>
 #include "camera_manager.h"
 
+#include <opencv2/core/utils/filesystem.hpp>
+
 std::string output_directory="data/";
 
 Camera::Camera(std::string input_device_name, std::string input_device_name_uuid)
@@ -49,6 +51,9 @@ Camera::Camera(std::string input_device_name, std::string input_device_name_uuid
 
 	cv::namedWindow("Camera1", cv::WINDOW_NORMAL);
 	cv::resizeWindow("Camera1", 640, 480);
+
+	cv::utils::fs::createDirectory(output_directory);
+	cv::utils::fs::createDirectory(output_directory + m_input_device_name_uuid + ".data");
 
 	syslog(LOG_NOTICE, "Camera::Camera End");
 }
