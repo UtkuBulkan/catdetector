@@ -31,6 +31,8 @@
 #include <chrono>
 #include <syslog.h>
 #include "camera_manager.h"
+#include <algorithm>
+#include <vector>
 
 #include <opencv2/core/utils/filesystem.hpp>
 
@@ -111,6 +113,64 @@ void Camera::generate_json(cv::Mat &frame, std::string class_name, const int &fr
 	syslog(LOG_NOTICE, "ObjectDetector::generate_json End");
 }
 
+void Camera::generate_detected_object_count_map(std::string class_name)
+{
+	if (detected_object_count_map.find(class_name) != detected_object_count_map.end()) {
+		detected_object_count_map[class_name] += 1;
+	} else {
+		detected_object_count_map[class_name] = 1;
+	}
+}
+
+void Camera::generate_detected_object_timeline_map(std::string class_name, int framecount)
+{
+	if (detected_object_timeline_map.find(class_name) != detected_object_timeline_map.end()) {
+		detected_object_timeline_map[class_name].push_back(framecount);
+	} else {
+		std::vector<int> timeline;
+		timeline.push_back(framecount);
+		detected_object_timeline_map[class_name] = timeline;
+	}
+}
+
+template <typename T1, typename T2>
+struct less_second {
+    typedef std::pair<T1, T2> type;
+    bool operator ()(type const& a, type const& b) const {
+        return a.second > b.second;
+    }
+};
+
+static std::pair<std::string, int> get_pair( std::pair<std::string, int> i )
+{
+	return i;
+}
+
+void Camera::generate_metadata_json()
+{
+	json metadata_j;
+	std::vector<std::pair<std::string,int> > v( detected_object_count_map.size() );
+	transform( detected_object_count_map.begin(), detected_object_count_map.end(), v.begin(), get_pair );
+	std::sort( v.begin(), v.end(), less_second<std::string, int>());
+	for (int i=0; i<(int)v.size(); i++) {
+		json local_j;
+		local_j["class"] = v[i].first;
+		local_j["count"] = v[i].second;
+		std::vector<int> timeline = detected_object_timeline_map[v[i].first];
+		json timeline_j;
+		for (int k=0; k<(unsigned int)timeline.size(); k++) {
+			timeline_j[k] = timeline[k];
+		}
+		local_j["interval"].push_back(timeline_j);
+		metadata_j.push_back(local_j);
+	}
+	std::ofstream json_metadata_file;
+	std::string json_metadata_filename(output_directory + m_input_device_name_uuid + ".data" + "/" + m_input_device_name_uuid + "-metadata.json"); 
+	json_metadata_file.open (json_metadata_filename);
+	json_metadata_file << metadata_j.dump(0) << std::endl;
+	json_metadata_file.close();
+}
+
 void Camera::generate_html_thumbnail(std::string frame_directory, std::string frame_name)
 {
 	html_file << "<html>" << std::endl;
@@ -121,7 +181,6 @@ void Camera::generate_html_thumbnail(std::string frame_directory, std::string fr
 	html_file << "</body>" << std::endl;
 	html_file << "</html>" << std::endl;
 }
-
 
 int Camera::process_frame()
 {
@@ -152,6 +211,8 @@ int Camera::process_frame()
 	m_object_detectors[0]->process_frame(frame, output_frame, detected_objects);
 	for(int i = 0; i < (int) detected_objects.size(); i++) {
 		generate_json(detected_objects[i].first, detected_objects[i].second , framecount, i);
+		generate_detected_object_count_map(detected_objects[i].second);
+		generate_detected_object_timeline_map(detected_objects[i].second, framecount);
 	}
 
 	/* Outputting captured frames to json */
@@ -160,6 +221,9 @@ int Camera::process_frame()
 	json_file.open (json_videodata_filename);
 	json_file << j.dump(0) << std::endl;
 	json_file.close();
+
+	/* Outputting video metadata to json */
+	generate_metadata_json();
 
 	cv::imshow("Camera1", output_frame);
 	if(cv::waitKey(30) >= 0) break;

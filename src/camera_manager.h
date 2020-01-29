@@ -32,6 +32,7 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <map>
 #include <opencv2/opencv.hpp>
 
 #include "opencv2/core.hpp"
@@ -52,6 +53,9 @@ public:
 
 	void generate_json(cv::Mat &frame, std::string class_name, const int &framecount, const int &itemid);
 	void generate_html_thumbnail(std::string frame_directory, std::string frame_name);
+	void generate_metadata_json();
+	void generate_detected_object_count_map(std::string class_name);
+	void generate_detected_object_timeline_map(std::string class_name, int framecount);
 
 private:
 	cv::Mat frame, output_frame;
@@ -69,5 +73,8 @@ private:
 
 	json j;
 	std::ofstream html_file;
+
+	std::map<std::string, int> detected_object_count_map;
+	std::map<std::string, std::vector<int> > detected_object_timeline_map;
 };
 #endif /* _CAMERA_MANAGER_H_ */
