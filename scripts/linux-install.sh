@@ -42,12 +42,12 @@ sudo apt-get install libatlas-base-dev gfortran
 
 git clone https://github.com/opencv/opencv.git
 cd opencv
-git checkout master
+git checkout 4.2.0
 cd ..
  
 git clone https://github.com/opencv/opencv_contrib.git
 cd opencv_contrib
-git checkout master
+git checkout 4.2.0
 cd ..
 
 cd opencv
@@ -56,15 +56,13 @@ cd build
 
 cmake -D CMAKE_BUILD_TYPE=RELEASE \
             -D CMAKE_INSTALL_PREFIX=/usr/local \
-            -D INSTALL_C_EXAMPLES=ON \
-            -D WITH_TBB=ON \
             -D WITH_V4L=ON \
             -D WITH_QT=ON \
             -D WITH_OPENGL=ON \
             -D OPENCV_EXTRA_MODULES_PATH=../../opencv_contrib/modules \
-            -D WITH_TBB=OFF \
+            -D WITH_TBB=ON \
             -D BUILD_TBB=ON \
-            -D BUILD_EXAMPLES=ON ..
+            -D BUILD_opencv_legacy=OFF ..
 
 make -j7
 make install

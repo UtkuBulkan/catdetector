@@ -13,7 +13,8 @@ set(CMAKE_AUTORCC ON)
 include_directories(include)
 
 #Can manually add the sources using the set command as follows:
-set(SOURCES src/catdetector.cpp  src/camera_manager.cpp src/objectdetection.cpp src/objectdetection_yolo.cpp src/md5_helper.cpp src/kafka/kafkaproducer.cpp)
+set(SOURCES src/catdetector.cpp  src/camera_manager.cpp src/objectdetection.cpp src/objectdetection_yolo.cpp)
+# src/md5_helper.cpp src/kafka/kafkaproducer.cpp)
 
 find_package(OpenCV)
 
@@ -42,4 +43,5 @@ file(GLOB ${SOURCES} ${SOURCES})
 add_executable(catdetector ${SOURCES})
 
 # Link your application with OpenCV libraries
-target_link_libraries(catdetector ${OpenCV_LIBS} ssl crypto rdkafka++)
+target_link_libraries(catdetector ${OpenCV_LIBS})
+# ssl crypto rdkafka++)

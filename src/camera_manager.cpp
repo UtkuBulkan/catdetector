@@ -51,9 +51,10 @@ Camera::Camera(std::string input_device_name, std::string input_device_name_uuid
 	framecount = 0;
 	catdetector_skip_this_number_of_frames = 24;
 
+#if defined (CATDETECTOR_DEVELOPMENT)
 	cv::namedWindow("Camera1", cv::WINDOW_NORMAL);
 	cv::resizeWindow("Camera1", 640, 480);
-
+#endif
 	cv::utils::fs::createDirectory(output_directory);
 	cv::utils::fs::createDirectory(output_directory + m_input_device_name_uuid + ".data");
 
@@ -224,11 +225,12 @@ int Camera::process_frame()
 
 	/* Outputting video metadata to json */
 	generate_metadata_json();
-
+#if defined (CATDETECTOR_DEVELOPMENT)
 	cv::imshow("Camera1", output_frame);
 	if(cv::waitKey(30) >= 0) break;
+#endif
 	}
-		html_file.close();
+	html_file.close();
 
 
 	syslog(LOG_NOTICE, "Camera::loop End");
