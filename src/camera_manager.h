@@ -44,7 +44,7 @@
 class Camera
 {
 public:
-	Camera(std::string input_device_name, std::string input_device_name_uuid);
+	Camera(std::string input_device_name, std::string input_device_name_uuid, std::string input_username);
 	~Camera();
 	void set_models(std::vector<ObjectDetector*> object_detectors);
 	std::string get_input_device_name();
@@ -63,7 +63,8 @@ private:
 	int catdetector_skip_this_number_of_frames;
 	int64_t start_time;
 
-	std::string m_input_device_name, m_input_device_name_uuid;
+	std::string output_directory;
+	std::string m_input_device_name, m_input_device_name_uuid, m_input_username;
 	std::string m_output_file_path;
 	cv::VideoCapture capture;
 	cv::VideoWriter outputVideo;

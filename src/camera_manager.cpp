@@ -33,16 +33,27 @@
 #include "camera_manager.h"
 #include <algorithm>
 #include <vector>
+#include <string>
 
 #include <opencv2/core/utils/filesystem.hpp>
 
-std::string output_directory="data/";
-
-Camera::Camera(std::string input_device_name, std::string input_device_name_uuid)
+Camera::Camera(std::string input_device_name, std::string input_device_name_uuid, std::string input_username)
 {
 	syslog(LOG_NOTICE, "Camera::Camera Begin");
 	m_input_device_name = input_device_name;
 	m_input_device_name_uuid = input_device_name_uuid;
+
+	m_input_username = input_username;
+
+	output_directory.assign("data/");
+
+	if (!m_input_username.empty()) {
+		output_directory.append(m_input_username);
+		output_directory.append("/");
+		output_directory.append(input_device_name_uuid);
+		output_directory.append("/");
+		syslog(LOG_NOTICE, "Output Directory : %s", output_directory.c_str());
+	}
 
 	capture.open(m_input_device_name);
 	if ( !capture.isOpened	() ) {

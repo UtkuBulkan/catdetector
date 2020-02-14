@@ -41,7 +41,7 @@ int main(int argc, char *argv[])
 {
 	setlogmask (LOG_UPTO (LOG_NOTICE));
 	openlog ("catdetector", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
-	std::string filename, uuid;
+	std::string filename, uuid, username;
 	ObjectDetector *obj = ObjectDetector::GenerateDetector("Yolo");
 
 	if (argc > 1) {
@@ -51,11 +51,12 @@ int main(int argc, char *argv[])
 		all_args.assign(argv + 1, argv + argc);
 		filename = all_args[0];
 		uuid = all_args[1];
-		syslog(LOG_NOTICE, "Size of args : %d, Filename : %s, UUID : %s", (int) all_args.size(), filename.c_str(), uuid.c_str());
+		username = all_args[2];
+		syslog(LOG_NOTICE, "Size of args : %d, Filename : %s, UUID : %s, Username : %s", (int) all_args.size(), filename.c_str(), uuid.c_str(), username.c_str());
 	} else{
 		filename = "./demo.mp4";
 	}
-	Camera *camera = new Camera(filename, uuid);
+	Camera *camera = new Camera(filename, uuid, username);
 	camera->set_models({obj});
 
 	camera->process_frame();
