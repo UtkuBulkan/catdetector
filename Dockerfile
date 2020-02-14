@@ -52,7 +52,34 @@ RUN cd /catdetector && git checkout develop
 RUN mkdir /catdetector/release && cd /catdetector/release && cmake .. && make
 RUN mkdir /catdetector/release/data/
 
-ENTRYPOINT ["/catdetector/release/catdetector"]
-CMD []
+
+RUN apt -y install wget
+
+RUN cd /catdetector/data/yolo/ && wget https://pjreddie.com/media/files/yolov3.weights
+
+RUN apt-get -y install lsb-release && \
+    export GCSFUSE_REPO=gcsfuse-`lsb_release -c -s` && \
+    echo "deb http://packages.cloud.google.com/apt $GCSFUSE_REPO main" | tee /etc/apt/sources.list.d/gcsfuse.list && \
+    curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+
+RUN apt-get update
+RUN apt-get -y install gcsfuse
+
+RUN export CLOUD_SDK_REPO="cloud-sdk-$(lsb_release -c -s)" && \
+    echo "deb http://packages.cloud.google.com/apt $CLOUD_SDK_REPO main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list && \
+    curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add - && \
+    apt-get update && apt-get -y install google-cloud-sdk
+
+RUN git clone https://github.com/UtkuBulkan/catdetector_gcloud_certificates
+RUN export GOOGLE_APPLICATION_CREDENTIALS='/catdetector_gcloud_certificates/service-cert/supereye.co.uk-storage.json'
+
+RUN cd /catdetector && git pull
+RUN cd /catdetector/release && make
+RUN chmod 0777 /catdetector/catdetector_script.sh
+
+# ENTRYPOINT ["/bin/bash"]
+
+ENTRYPOINT ["/bin/bash", "-c", "/catdetector/catdetector_script.sh"]
+# CMD ["sleep", "infinity"]
 
 
