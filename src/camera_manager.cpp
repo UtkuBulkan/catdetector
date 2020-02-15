@@ -45,7 +45,7 @@ Camera::Camera(std::string input_device_name, std::string input_device_name_uuid
 
 	m_input_username = input_username;
 
-	output_directory.assign("");
+	output_directory.assign("data/");
 
 	if (!m_input_username.empty()) {
 		output_directory.append(m_input_username);
