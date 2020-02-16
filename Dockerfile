@@ -70,14 +70,13 @@ RUN export CLOUD_SDK_REPO="cloud-sdk-$(lsb_release -c -s)" && \
     curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add - && \
     apt-get update && apt-get -y install google-cloud-sdk
 
-RUN cd  /
-RUN git clone https://UtkuBulkan:Gribeyaz1@github.com/UtkuBulkan/catdetector_gcloud_certificates
-RUN export GOOGLE_APPLICATION_CREDENTIALS='/catdetector_gcloud_certificates/service-cert/supereye.co.uk-storage.json'
+RUN git clone https://github.com/UtkuBulkan/catdetector_gcloud_certificates
+
+COPY marker /dev/null
 
 RUN cd /catdetector && git pull
 RUN cd /catdetector/release && make
 RUN chmod 0777 /catdetector/catdetector_script.sh
-
 
 ENTRYPOINT ["/bin/bash", "-c", "/catdetector/catdetector_script.sh"]
 
